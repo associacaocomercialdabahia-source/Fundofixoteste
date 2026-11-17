@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+#printableReport {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    display: block !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  #printableReport {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    color: #0f172a !important;
+    background: #ffffff !important;
+  }
+
+  #printableReport table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  #printableReport th,
+  #printableReport td {
+    overflow-wrap: anywhere;
+  }
+
+  #printableReport thead {
+    display: table-header-group;
+  }
+
+  #printableReport tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

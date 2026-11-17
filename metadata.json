@@ -1,0 +1,6 @@
+{
+  "name": "Fundo Fixo ACB",
+  "description": "Sistema de Gestão e Prestação de Contas de Fundo Fixo para a Associação Comercial da Bahia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

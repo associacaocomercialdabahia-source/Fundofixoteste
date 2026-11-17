@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Fundo Fixo (ACB)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Printable Styles */
+        #printableReport { display: none; }
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            html, body { display: block !important; min-height: auto !important; margin: 0 !important; background: white !important; }
+            body > *:not(#printableReport) { display: none !important; }
+            #printableReport { display: block !important; position: static; width: 100%; }
+            #printableReport table { table-layout: fixed; }
+            #printableReport th, #printableReport td { overflow-wrap: anywhere; }
+            #printableReport thead { display: table-header-group; }
+            #printableReport tr { break-inside: avoid; page-break-inside: avoid; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-indigo-700 text-white shadow-lg sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-20 py-2 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-3 shrink-0">
+                <img src="Marcas-07_2.jpg" alt="Associação Comercial da Bahia" width="240" height="288" class="w-12 h-auto p-1 bg-white rounded-lg shrink-0" onerror="if(!this.dataset.step){this.dataset.step='1';this.src='/assets/logo-acb.jpg';}else if(this.dataset.step==='1'){this.dataset.step='2';this.src='Marcas-07.jpg';}">
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">Fundo Fixo (ACB)</h1>
+                    <p class="text-xs text-indigo-200">Gestão & Prestação de Contas</p>
+                </div>
+            </div>
+
+            <!-- Header Actions -->
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span id="syncStatus" role="status" class="text-xs text-indigo-100 max-w-40">Carregando dados compartilhados...</span>
+                <button onclick="openModal('transactionModal')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium text-sm flex items-center shadow-md transition-all">
+                    <i data-lucide="plus-circle" class="w-4 h-4 mr-1.5"></i>
+                    <span>Nova Movimentação</span>
+                </button>
+                <button onclick="openCloseReportModal()" title="Imprimir Relatório de Fechamento" class="bg-indigo-600 hover:bg-indigo-500 text-indigo-100 px-3 py-2 rounded-lg text-sm transition-all flex items-center border border-indigo-500 font-medium">
+                    <i data-lucide="printer" class="w-4 h-4 mr-1.5"></i>
+                    <span class="hidden sm:inline">Imprimir Fechamento</span>
+                </button>
+                <button onclick="exportDataCSV()" title="Exportar Relatório CSV" class="bg-indigo-600 hover:bg-indigo-500 text-indigo-100 p-2 rounded-lg text-sm transition-all flex items-center">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                </button>
+                <!-- NOVA ABA: Botão de Importação/Exportação -->
+                <button onclick="openModal('backupModal')" title="Backup / Restaurar Dados" class="bg-indigo-600 hover:bg-indigo-500 text-indigo-100 p-2 rounded-lg text-sm transition-all flex items-center border border-indigo-500">
+                    <i data-lucide="database" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col gap-6">
+
+        <!-- Bar for Month Selection and Complementary Fund Config -->
+        <section class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+            <!-- Selector de Mês/Ano -->
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                    <i data-lucide="calendar" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <label for="monthFilter" class="block text-xs font-semibold uppercase text-slate-500">Mês de Referência</label>
+                    <input type="month" id="monthFilter" onchange="applyFilters()" class="text-sm border border-slate-300 rounded-lg px-3 py-1 mt-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 font-semibold">
+                </div>
+            </div>
+
+            <!-- Fundo Fixo Principal e Complementar -->
+            <form id="fundConfigForm" onsubmit="saveFundLimit(event)" class="flex flex-wrap items-center gap-3 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-medium text-slate-600">Teto Fixo:</span>
+                    <div class="relative rounded-lg shadow-sm">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs font-semibold">R$</span>
+                        <input type="number" step="0.01" id="fundLimitInput" required class="w-28 pl-7 pr-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="1500.00">
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Fundo Complementar:</span>
+                    <div class="relative rounded-lg shadow-sm">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs font-semibold">R$</span>
+                        <input type="number" step="0.01" id="fundComplementInput" class="w-28 pl-7 pr-2 py-1 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50/30" placeholder="0.00">
+                    </div>
+                </div>
+
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    Salvar Valores
+                </button>
+            </form>
+        </section>
+
+        <!-- Metrics Dashboard Cards -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Saldo Atual -->
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Saldo Disponível</span>
+                    <div class="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                        <i data-lucide="banknote" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div>
+                    <div id="metricBalance" class="text-2xl sm:text-3xl font-extrabold text-slate-900">R$ 0,00</div>
+                    <p class="text-xs text-slate-500 mt-1" id="metricBalanceSub">Teto Total: R$ 0,00</p>
+                </div>
+            </div>
+
+            <!-- Reembolsos pagos aos funcionários -->
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Reembolsado aos funcionários</span>
+                    <div class="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                        <i data-lucide="arrow-down-right" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div>
+                    <div id="metricInflows" class="text-2xl sm:text-3xl font-extrabold text-emerald-600">R$ 0,00</div>
+                    <p class="text-xs text-slate-500 mt-1">Pagos nas despesas do mês selecionado</p>
+                    <p id="metricReimbursementPending" class="text-xs text-amber-700 mt-1" aria-live="polite">A reembolsar: R$ 0,00</p>
+                </div>
+            </div>
+
+            <!-- Saídas / Despesas -->
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Total Despesas</span>
+                    <div class="p-2 bg-rose-50 rounded-lg text-rose-600">
+                        <i data-lucide="arrow-up-right" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div>
+                    <div id="metricOutflows" class="text-2xl sm:text-3xl font-extrabold text-rose-600">R$ 0,00</div>
+                    <p class="text-xs text-slate-500 mt-1" id="metricPendingCount">0 comprovantes pendentes</p>
+                </div>
+            </div>
+
+            <!-- Nível de Utilização -->
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex items-center justify-between text-slate-500 mb-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider">Uso do Fundo Total</span>
+                    <div class="p-2 bg-amber-50 rounded-lg text-amber-600">
+                        <i data-lucide="pie-chart" class="w-5 h-5"></i>
+                    </div>
+                </div>
+                <div>
+                    <div id="metricUsagePercent" class="text-2xl sm:text-3xl font-extrabold text-slate-900">0%</div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 mt-2">
+                        <div id="metricProgressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts & Filters Area -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Chart Card -->
+            <div class="lg:col-span-1 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 flex items-center">
+                    <i data-lucide="donut" class="w-4 h-4 mr-2 text-indigo-600"></i> Despesas por Categoria (Mês)
+                </h2>
+                <div class="flex-1 flex items-center justify-center relative min-h-[200px]">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Guidance Info Card -->
+            <div class="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center mb-2">
+                        <i data-lucide="sliders" class="w-4 h-4 mr-2 text-indigo-600"></i> Resumo de Fundo & Suplementação
+                    </h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-xs">
+                        <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <span class="text-slate-500 block">Teto Fixo Regular:</span>
+                            <strong id="displayBaseLimit" class="text-sm text-slate-800">R$ 0,00</strong>
+                        </div>
+                        <div class="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
+                            <span class="text-amber-700 block font-medium">Fundo Complementar:</span>
+                            <strong id="displayComplement" class="text-sm text-amber-900">R$ 0,00</strong>
+                        </div>
+                        <div class="p-3 bg-indigo-50/60 rounded-lg border border-indigo-200">
+                            <span class="text-indigo-700 block font-medium">Teto Operacional Total:</span>
+                            <strong id="displayTotalLimit" class="text-sm text-indigo-900">R$ 0,00</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-100 pt-3 mb-4">
+                    <h3 class="text-xs font-semibold text-slate-700">Reembolsos aos funcionários</h3>
+                    <p class="text-xs text-slate-500 mt-1">Valores integrais das despesas do mês selecionado, conforme a situação de reembolso.</p>
+                    <div class="relative h-28 mt-2">
+                        <canvas id="reimbursementChart" role="img" aria-label="Valores reembolsados e a reembolsar aos funcionários. Totais disponíveis no cartão de reembolsos."></canvas>
+                        <p id="reimbursementEmpty" class="absolute inset-0 flex items-center justify-center text-xs text-slate-500">Nenhum reembolso pago ou pendente neste período.</p>
+                    </div>
+                </div>
+
+                <!-- Guidance Info Box -->
+                <div class="bg-indigo-50/70 rounded-lg p-4 border border-indigo-100 flex items-start space-x-3 text-xs text-indigo-900">
+                    <i data-lucide="info" class="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5"></i>
+                    <div>
+                        <p class="font-semibold mb-1">Como utilizar a separação mensal e o fundo complementar?</p>
+                        <p class="text-indigo-800 leading-relaxed">
+                            Selecione no filtro superior o <strong>mês de referência</strong> para auditar os comprovantes e despesas daquele período. Caso ocorram gastos imprevistos ou demandas extraordinárias, preencha o <strong>Fundo Complementar</strong> para expandir a margem do caixa temporariamente.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Transactions Table Section -->
+        <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col flex-1">
+            <!-- Header & Filters -->
+            <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+                <div class="flex items-center space-x-3">
+                    <h2 class="text-base font-bold text-slate-800 flex items-center">
+                        <i data-lucide="receipt" class="w-5 h-5 mr-2 text-indigo-600"></i> Histórico de Movimentações
+                    </h2>
+                    <span id="transactionCountBadge" class="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">0 registros</span>
+                </div>
+
+                <!-- Filters -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="openCloseReportModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-300 font-medium flex items-center transition-colors mr-1">
+                        <i data-lucide="printer" class="w-3.5 h-3.5 mr-1 text-slate-600"></i> Imprimir Histórico
+                    </button>
+                    <div class="relative flex-1 sm:w-48">
+                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+                        <input type="text" id="searchInput" oninput="applyFilters()" placeholder="Buscar..." class="w-full pl-9 pr-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <select id="typeFilter" onchange="applyFilters()" class="text-xs sm:text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                        <option value="ALL">Todos os Tipos</option>
+                        <option value="OUT">Saída (Despesa)</option>
+                        <option value="IN">Entrada (Reembolso)</option>
+                    </select>
+
+                    <select id="categoryFilter" onchange="applyFilters()" class="text-xs sm:text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                        <option value="ALL">Todas as Categorias</option>
+                        <option value="Alimentação">Alimentação</option>
+                        <option value="Copa">Copa</option>
+                        <option value="Transporte/Combustível">Transporte/Combustível</option>
+                        <option value="Material de Escritório">Material de Escritório</option>
+                        <option value="Manutenção/Serviços">Manutenção/Serviços</option>
+                        <option value="Correios/Logística">Correios/Logística</option>
+                        <option value="Aporte/Reembolso">Aporte/Reembolso</option>
+                        <option value="Fundo Complementar">Fundo Complementar</option>
+                        <option value="Outros">Outros</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-x-auto custom-scrollbar flex-1">
+                <table class="w-full text-left text-xs sm:text-sm text-slate-600">
+                    <thead class="bg-slate-100/70 text-slate-700 font-semibold uppercase text-[11px] tracking-wider border-b border-slate-200">
+                        <tr>
+                            <th class="py-3 px-4">Data</th>
+                            <th class="py-3 px-4">Descrição / Fornecedor</th>
+                            <th class="py-3 px-4">Categoria</th>
+                            <th class="py-3 px-4">Responsável</th>
+                            <th class="py-3 px-4 text-right">Valor (R$)</th>
+                            <th class="py-3 px-4 text-center">Nota Fiscal / Anexo</th>
+                            <th class="py-3 px-4 text-center">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionTableBody" class="divide-y divide-slate-100">
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden p-8 text-center flex-col items-center justify-center">
+                <div class="p-3 bg-slate-100 rounded-full text-slate-400 mb-3">
+                    <i data-lucide="inbox" class="w-8 h-8"></i>
+                </div>
+                <p class="text-slate-600 font-medium">Nenhuma movimentação encontrada</p>
+                <p class="text-xs text-slate-400 mt-1">Cadastre uma nova movimentação ou ajuste os filtros da pesquisa.</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 mt-auto">
+        Fundo Fixo Digital - Sistema de Prestação de Contas Corporativa
+    </footer>
+
+    <!-- MODAL: Nova / Editar Movimentação -->
+    <div id="transactionModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto transform transition-all">
+            <!-- Modal Header -->
+            <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 id="modalTitle" class="font-bold text-slate-800 text-base flex items-center">
+                    <i data-lucide="plus-circle" class="w-5 h-5 mr-2 text-indigo-600"></i> Nova Movimentação
+                </h3>
+                <button onclick="closeModal('transactionModal')" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Modal Form -->
+            <form id="transactionForm" onsubmit="handleFormSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="editId" value="">
+
+                <!-- Tipo -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Tipo de Operação</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center justify-center p-2.5 border rounded-xl cursor-pointer hover:bg-slate-50 transition-all border-slate-300 has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50/50 has-[:checked]:text-rose-700">
+                            <input type="radio" name="type" value="OUT" checked onchange="toggleCategorySelect()" class="sr-only">
+                            <i data-lucide="arrow-up-right" class="w-4 h-4 mr-1.5 text-rose-600"></i>
+                            <span class="font-medium text-sm">Saída (Despesa)</span>
+                        </label>
+                        <label class="flex items-center justify-center p-2.5 border rounded-xl cursor-pointer hover:bg-slate-50 transition-all border-slate-300 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/50 has-[:checked]:text-emerald-700">
+                            <input type="radio" name="type" value="IN" onchange="toggleCategorySelect()" class="sr-only">
+                            <i data-lucide="arrow-down-right" class="w-4 h-4 mr-1.5 text-emerald-600"></i>
+                            <span class="font-medium text-sm">Entrada (Aporte)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Data -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Data *</label>
+                        <input type="date" id="formDate" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <!-- Valor -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Valor (R$) *</label>
+                        <input type="number" step="0.01" min="0.01" id="formAmount" required placeholder="0.00" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Descrição -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Descrição / Estabelecimento *</label>
+                    <input type="text" id="formDescription" required placeholder="Ex: Combustível viagem, Almoxarifado, Uber..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Categoria -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Categoria *</label>
+                        <select id="formCategory" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                            <option value="Alimentação">Alimentação</option>
+                            <option value="Copa">Copa</option>
+                            <option value="Transporte/Combustível">Transporte/Combustível</option>
+                            <option value="Material de Escritório">Material de Escritório</option>
+                            <option value="Manutenção/Serviços">Manutenção/Serviços</option>
+                            <option value="Correios/Logística">Correios/Logística</option>
+                            <option value="Fundo Complementar">Fundo Complementar</option>
+                            <option value="Outros">Outros</option>
+                        </select>
+                    </div>
+                    <!-- Responsável / Solicitante -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Solicitante / Beneficiário *</label>
+                        <input type="text" id="formRequester" required placeholder="Ex: Carlos Silva" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div id="reimbursementFields" class="grid grid-cols-1 sm:grid-cols-2 items-center gap-x-3 gap-y-1">
+                    <label for="formReimbursement" class="block text-xs font-semibold text-slate-700 mb-1">Reembolso ao funcionário</label>
+                    <p id="reimbursementHelp" class="sm:col-span-2 sm:order-last text-xs text-slate-500">Compra com dinheiro próprio? Selecione a situação e informe o funcionário em Beneficiário.</p>
+                    <select id="formReimbursement" aria-describedby="reimbursementHelp" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+                </div>
+
+                <!-- Anexar Nota Fiscal / Comprovante -->
+                <div class="pt-2">
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Anexar Nota Fiscal / Comprovante</label>
+                    <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:bg-slate-50 transition-all relative">
+                        <input type="file" id="formReceiptFile" accept="image/*,.pdf" onchange="handleFileSelect(event)" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                        <div id="uploadPlaceholder" class="flex flex-col items-center justify-center space-y-1">
+                            <i data-lucide="paperclip" class="w-6 h-6 text-slate-400"></i>
+                            <span class="text-xs font-medium text-indigo-600">Clique para selecionar imagem ou PDF</span>
+                            <span class="text-[10px] text-slate-400">JPG, PNG ou PDF (Máx. 5MB)</span>
+                        </div>
+                        <div id="uploadPreview" class="hidden flex items-center justify-between bg-indigo-50 p-2 rounded-lg text-xs text-indigo-800">
+                            <span id="uploadFileName" class="truncate font-semibold max-w-[200px]">arquivo.pdf</span>
+                            <button type="button" onclick="removeSelectedFile()" class="text-rose-500 hover:text-rose-700 font-bold ml-2">Remover</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Actions -->
+                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('transactionModal')" class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-md transition-colors flex items-center">
+                        <i data-lucide="check" class="w-4 h-4 mr-1.5"></i> Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Visualizador de Comprovante / Nota Fiscal -->
+    <div id="receiptViewerModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 id="receiptViewerTitle" class="font-bold text-slate-800 text-sm sm:text-base flex items-center">
+                    <i data-lucide="file-text" class="w-5 h-5 mr-2 text-indigo-600"></i> Comprovante Anexo
+                </h3>
+                <div class="flex items-center space-x-2">
+                    <a id="receiptDownloadBtn" href="#" download="comprovante" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg flex items-center font-medium transition-colors">
+                        <i data-lucide="download" class="w-3.5 h-3.5 mr-1"></i> Baixar
+                    </a>
+                    <button onclick="closeModal('receiptViewerModal')" class="text-slate-400 hover:text-slate-600 transition-colors p-1">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto flex items-center justify-center bg-slate-900/5 min-h-[300px]">
+                <div id="receiptViewerContent" class="max-w-full">
+                    <!-- Image or PDF Embed -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Opções de Fechamento / Impressão do Relatório -->
+    <div id="printReportModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all">
+            <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="font-bold text-slate-800 text-base flex items-center">
+                    <i data-lucide="printer" class="w-5 h-5 mr-2 text-indigo-600"></i> Imprimir Prestação de Contas
+                </h3>
+                <button onclick="closeModal('printReportModal')" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 text-xs sm:text-sm">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Data de Fechamento do Fundo Fixo</label>
+                    <input type="date" id="closingDateInput" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Nome do Responsável / Tesoureiro</label>
+                    <input type="text" id="closingResponsibleInput" placeholder="Ex: Gestor Financeiro / Maria Souza" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-xs flex items-start space-x-2">
+                    <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
+                    <span>O relatório será gerado formatado para impressão/PDF com os lançamentos do mês selecionado.</span>
+                </div>
+                <div class="flex justify-end space-x-3 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('printReportModal')" class="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 font-medium hover:bg-slate-100">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="generateAndPrintReport()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold flex items-center shadow-md">
+                        <i data-lucide="printer" class="w-4 h-4 mr-1.5"></i> Gerar e Imprimir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Importação e Exportação de Backup (JSON) -->
+    <div id="backupModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform transition-all">
+            <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="font-bold text-slate-800 text-base flex items-center">
+                    <i data-lucide="database" class="w-5 h-5 mr-2 text-indigo-600"></i> Backup de Dados
+                </h3>
+                <button onclick="closeModal('backupModal')" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div id="legacyBackup" class="hidden space-y-2">
+                    <p class="text-xs text-slate-500">Há dados antigos salvos neste navegador. Transfira-os para que todos possam acessá-los. Registros com o mesmo ID e os limites serão atualizados.</p>
+                    <button onclick="shareLegacyData()" class="w-full py-2.5 bg-indigo-600 text-white rounded-lg text-sm">Compartilhar dados antigos deste navegador</button>
+                </div>
+                <!-- Exportar -->
+                <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-slate-700">Exportar Backup</h4>
+                    <p class="text-xs text-slate-500">Faça o download de todos os dados atuais (limites e movimentações) em um arquivo seguro (.json).</p>
+                    <button onclick="exportDataJSON()" class="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-medium transition-colors flex items-center justify-center">
+                        <i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i> Exportar Arquivo de Salvamento
+                    </button>
+                </div>
+                
+                <div class="border-t border-slate-100"></div>
+
+                <!-- Importar -->
+                <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-slate-700">Importar Backup</h4>
+                    <p class="text-xs text-slate-500">Importe um backup (.json) para compartilhar seus dados antigos com todos os usuários. Registros com o mesmo ID serão atualizados; os demais serão mantidos.</p>
+                    <div class="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center hover:bg-slate-50 transition-all relative group">
+                        <input type="file" id="importBackupFile" accept=".json" onchange="importDataJSON(event)" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
+                        <div class="flex flex-col items-center justify-center space-y-2">
+                            <i data-lucide="upload-cloud" class="w-7 h-7 text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
+                            <span class="text-sm font-medium text-indigo-600 group-hover:text-indigo-700 transition-colors">Clique para selecionar o arquivo .json</span>
+                            <span class="text-[10px] text-slate-400">Registros com o mesmo ID serão substituídos.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Printable Report Template -->
+    <div id="printableReport" class="hidden">
+        <!-- Content will be rendered dynamically for print -->
+    </div>
+
+    <!-- Toast Notification Element -->
+    <div id="toastNotification" class="fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-xl shadow-lg transform transition-all translate-y-20 opacity-0 z-[100] flex items-center pointer-events-none">
+        <i data-lucide="check-circle" class="w-5 h-5 mr-2 text-emerald-400" id="toastIcon"></i>
+        <span id="toastMessage" class="text-sm font-medium">Operação realizada com sucesso!</span>
+    </div>
+
+    <script>
+        window.fundLimit = 1500;
+        window.fundComplement = 0;
+        window.transactions = [];
+        window.currentBase64Receipt = null;
+        window.categoryChartInstance = null;
+        window.sharedReady = false;
+        window.saving = false;
+        function syncStatus(message) { document.getElementById('syncStatus').textContent = message; }
+        async function sharedRequest(body, method = 'POST') {
+            const response = await fetch('/api/fund', { method, cache: 'no-store', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Falha no salvamento compartilhado.');
+            return data;
+        }
+        async function loadSharedData() {
+            const data = await sharedRequest(null, 'GET');
+            window.fundLimit = data.fundLimit;
+            window.fundComplement = data.fundComplement;
+            window.transactions = data.transactions;
+            document.getElementById('fundLimitInput').value = data.fundLimit.toFixed(2);
+            document.getElementById('fundComplementInput').value = data.fundComplement.toFixed(2);
+            window.sharedReady = true;
+            syncStatus('Dados compartilhados atualizados');
+            renderDashboard();
+        }
+        async function saveShared(action) {
+            if (!window.sharedReady || window.saving) {
+                showToast(window.saving ? 'Aguarde o salvamento em andamento.' : 'Atualize a página para carregar os dados compartilhados.', true);
+                return false;
+            }
+            window.saving = true;
+            syncStatus('Salvando para todos...');
+            try {
+                await action();
+                await loadSharedData();
+                return true;
+            } catch (error) {
+                syncStatus('Falha de conexão — atualize a página');
+                showToast(error.message, true);
+                return false;
+            } finally { window.saving = false; }
+        }
+        async function prepareTransaction(tx) {
+            const result = { ...tx };
+            if (result.receipt?.data?.startsWith('data:')) {
+                const blob = await (await fetch(result.receipt.data)).blob();
+                const response = await fetch('/api/receipts', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+                if (!response.ok) throw new Error('Não foi possível salvar o comprovante. Verifique o formato e o limite de 5MB.');
+                result.receipt = { ...result.receipt, data: (await response.json()).url };
+            }
+            return result;
+        }
+        window.onload = async function() {
+            lucide.createIcons();
+            toggleCategorySelect();
+            const today = new Date();
+            document.getElementById('monthFilter').value = today.toISOString().slice(0, 7);
+            document.getElementById('formDate').valueAsDate = today;
+            try {
+                if (localStorage.getItem('fundoFixoData') || localStorage.getItem('ff_backup_data')) document.getElementById('legacyBackup').classList.remove('hidden');
+            } catch {}
+            renderDashboard();
+            try { await loadSharedData(); }
+            catch { syncStatus('Falha ao carregar — atualize a página'); showToast('Não foi possível carregar os dados compartilhados. Verifique sua conexão e atualize a página.', true); }
+        };
+
+        // Helper para Notificações (Substitui Alert)
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toastNotification');
+            const msgEl = document.getElementById('toastMessage');
+            const icon = document.getElementById('toastIcon');
+            
+            msgEl.textContent = message;
+            if (isError) {
+                icon.setAttribute('data-lucide', 'x-circle');
+                icon.classList.replace('text-emerald-400', 'text-rose-400');
+            } else {
+                icon.setAttribute('data-lucide', 'check-circle');
+                icon.classList.replace('text-rose-400', 'text-emerald-400');
+            }
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        }
+
+        // Funções de Importação e Exportação (JSON)
+        function exportDataJSON() {
+            const dataToExport = {
+                fundLimit: window.fundLimit,
+                fundComplement: window.fundComplement,
+                transactions: window.transactions || []
+            };
+            const jsonString = JSON.stringify(dataToExport, null, 2);
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `fundo_fixo_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            showToast('Backup exportado com sucesso!');
+            closeModal('backupModal');
+        }
+
+        function shareLegacyData() {
+            try {
+                const stored = localStorage.getItem('fundoFixoData') || localStorage.getItem('ff_backup_data');
+                if (!stored) return;
+                importDataJSON({ target: { files: [new Blob([stored], { type: 'application/json' })], value: '' } });
+            } catch { showToast('Não foi possível ler os dados antigos.', true); }
+        }
+        async function importDataJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    if (!Array.isArray(data.transactions) || !Number.isFinite(data.fundLimit) || !Number.isFinite(data.fundComplement)) throw new Error('Backup inválido');
+                    const saved = await saveShared(async () => {
+                        for (const tx of data.transactions) {
+                            const transaction = await prepareTransaction(tx);
+                            await sharedRequest({ id: transaction.id, transaction });
+                        }
+                        await sharedRequest({ action: 'settings', fundLimit: data.fundLimit, fundComplement: data.fundComplement });
+                    });
+                    if (!saved) return;
+                    closeModal('backupModal');
+                    showToast('Backup importado e restaurado!');
+                } catch (err) {
+                    console.error("Erro ao importar o JSON:", err);
+                    showToast('Erro ao ler o arquivo. Formato inválido.', true);
+                }
+                event.target.value = ''; // Limpa o input file
+            };
+            reader.readAsText(file);
+        }
+
+        const reimbursementLabels = {
+            UNREVIEWED: 'Não verificado',
+            NOT_APPLICABLE: 'Não se aplica',
+            PENDING: 'A reembolsar',
+            PAID: 'Reembolsado'
+        };
+        function reimbursementStatus(t) {
+            return t.type === 'OUT' && Object.hasOwn(reimbursementLabels, t.reimbursementStatus) ? t.reimbursementStatus : 'UNREVIEWED';
+        }
+        function reimbursementLabel(t) {
+            return t.type === 'OUT' ? reimbursementLabels[reimbursementStatus(t)] : 'Não se aplica';
+        }
+        function reimbursementOptions(status) {
+            return Object.entries(reimbursementLabels).map(([value, label]) => `<option value="${value}"${value === status ? ' selected' : ''}>${label}</option>`).join('');
+        }
+        async function updateReimbursement(id, status) {
+            const item = (window.transactions || []).find(t => t.id === id);
+            if (!item || item.type !== 'OUT' || !Object.hasOwn(reimbursementLabels, status)) return;
+            const saved = await saveShared(() => sharedRequest({ id, transaction: { ...item, reimbursementStatus: status } }));
+            if (saved) showToast('Situação do reembolso salva para todos!');
+            else renderDashboard();
+        }
+
+        // Render Dashboard, Metrics & Data Table
+        function renderDashboard() {
+            const selectedMonth = document.getElementById('monthFilter').value; // YYYY-MM
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const typeFilter = document.getElementById('typeFilter').value;
+            const categoryFilter = document.getElementById('categoryFilter').value;
+
+            const limit = window.fundLimit || 0;
+            const complement = window.fundComplement || 0;
+
+            // Update Total Ceiling Summary Display
+            const totalCeiling = limit + complement;
+            document.getElementById('displayBaseLimit').textContent = formatCurrency(limit);
+            document.getElementById('displayComplement').textContent = formatCurrency(complement);
+            document.getElementById('displayTotalLimit').textContent = formatCurrency(totalCeiling);
+
+            // Filter Transactions by selected month first
+            const monthTransactions = (window.transactions || []).filter(t => {
+                if (!selectedMonth) return true;
+                return t.date && t.date.startsWith(selectedMonth);
+            });
+
+            // Compute Totals for selected month
+            const reimbursements = reimbursementTotals(monthTransactions);
+            let totalOut = 0;
+            let pendingReceipts = 0;
+
+            monthTransactions.forEach(t => {
+                if (t.type === 'OUT') {
+                    totalOut += (t.amount || 0);
+                    if (!t.receipt) pendingReceipts++;
+                }
+            });
+
+            const currentBalance = totalCeiling - totalOut;
+            const usagePercent = totalCeiling > 0 ? Math.min(100, Math.max(0, (totalOut / totalCeiling) * 100)) : 0;
+
+            // Update Metric Display
+            document.getElementById('metricBalance').textContent = formatCurrency(currentBalance);
+            document.getElementById('metricBalanceSub').textContent = `Teto Total: ${formatCurrency(totalCeiling)}`;
+            document.getElementById('metricInflows').textContent = formatCurrency(reimbursements.paid);
+            document.getElementById('metricReimbursementPending').textContent = `A reembolsar: ${formatCurrency(reimbursements.pending)}`;
+            document.getElementById('metricOutflows').textContent = formatCurrency(totalOut);
+            document.getElementById('metricPendingCount').textContent = `${pendingReceipts} sem comprovante`;
+            document.getElementById('metricUsagePercent').textContent = `${usagePercent.toFixed(1)}%`;
+            document.getElementById('metricProgressBar').style.width = `${usagePercent}%`;
+
+            // Filter Transactions for Table View
+            const filtered = monthTransactions.filter(t => {
+                const desc = (t.description || '').toLowerCase();
+                const req = (t.requester || '').toLowerCase();
+                const matchesSearch = desc.includes(search) || req.includes(search);
+                const matchesType = typeFilter === 'ALL' || t.type === typeFilter;
+                const matchesCategory = categoryFilter === 'ALL' || t.category === categoryFilter;
+                return matchesSearch && matchesType && matchesCategory;
+            });
+
+            // Update Count Badge
+            document.getElementById('transactionCountBadge').textContent = `${filtered.length} registro(s)`;
+
+            // Render Table Rows
+            const tbody = document.getElementById('transactionTableBody');
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                document.getElementById('emptyState').classList.remove('hidden');
+                document.getElementById('emptyState').classList.add('flex');
+            } else {
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('flex');
+
+                filtered.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(t => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-slate-50/80 transition-colors border-b border-slate-100';
+
+                    const isOut = t.type === 'OUT';
+                    const amountClass = isOut ? 'text-rose-600 font-semibold' : 'text-emerald-600 font-semibold';
+                    const sign = isOut ? '-' : '+';
+
+                    // Receipt Cell Button
+                    let receiptHTML = '';
+                    if (t.receipt) {
+                        receiptHTML = `
+                            <button onclick="viewReceipt('${t.id}')" class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors border border-indigo-200">
+                                <i data-lucide="file-check" class="w-3.5 h-3.5 mr-1 text-indigo-600"></i> Ver Nota
+                            </button>
+                        `;
+                    } else if (isOut) {
+                        receiptHTML = `
+                            <span class="inline-flex items-center text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                <i data-lucide="alert-circle" class="w-3 h-3 mr-1"></i> Pendente
+                            </span>
+                        `;
+                    } else {
+                        receiptHTML = `<span class="text-slate-400 text-xs">N/A</span>`;
+                    }
+
+                    tr.innerHTML = `
+                        <td class="py-3 px-4 text-slate-500 whitespace-nowrap">${formatDate(t.date)}</td>
+                        <td class="py-3 px-4 font-medium text-slate-800">${escapeHTML(t.description || '')}</td>
+                        <td class="py-3 px-4">
+                            <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                ${escapeHTML(t.category || '')}
+                            </span>
+                        </td>
+                        <td class="py-3 px-4 text-slate-600">${escapeHTML(t.requester || '')}</td>
+                        <td class="py-3 px-4 text-right whitespace-nowrap ${amountClass}">${sign} ${formatCurrency(t.amount || 0)}</td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">${receiptHTML}</td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                            <div class="flex items-center justify-center gap-2">
+                            ${isOut ? `<select id="reimbursement-${t.id}" aria-label="Reembolso ao funcionário: ${escapeHTML(t.description || '')}" title="Reembolso ao funcionário" onchange="updateReimbursement('${t.id}', this.value)" class="w-32 px-2 py-1 text-xs border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${reimbursementStatus(t) === 'PENDING' ? 'border-amber-300 bg-amber-50 text-amber-800' : reimbursementStatus(t) === 'PAID' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-300 bg-white text-slate-600'}">${reimbursementOptions(reimbursementStatus(t))}</select>` : ''}
+                                <button onclick="editTransaction('${t.id}')" class="text-slate-400 hover:text-indigo-600 p-1 transition-colors" title="Editar">
+                                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="deleteTransaction('${t.id}')" class="text-slate-400 hover:text-rose-600 p-1 transition-colors" title="Excluir">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            lucide.createIcons();
+            updateChart(monthTransactions);
+            updateReimbursementChart(reimbursements);
+        }
+
+        function reimbursementTotals(transactions) {
+            return transactions.reduce((totals, t) => {
+                if (t.type !== 'OUT') return totals;
+                const status = reimbursementStatus(t);
+                if (status === 'PAID') totals.paid += t.amount || 0;
+                if (status === 'PENDING') totals.pending += t.amount || 0;
+                return totals;
+            }, { paid: 0, pending: 0 });
+        }
+
+        function updateReimbursementChart(totals) {
+            const total = totals.paid + totals.pending;
+            document.getElementById('reimbursementEmpty').classList.toggle('hidden', total > 0);
+            if (window.reimbursementChartInstance) window.reimbursementChartInstance.destroy();
+            window.reimbursementChartInstance = null;
+            if (!total) return;
+            window.reimbursementChartInstance = new Chart(document.getElementById('reimbursementChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: ['Reembolsado', 'A reembolsar'],
+                    datasets: [{ data: [totals.paid, totals.pending], backgroundColor: ['#10b981', '#f59e0b'], borderRadius: 4, maxBarThickness: 18 }]
+                },
+                options: {
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    scales: { x: { beginAtZero: true, ticks: { callback: value => formatCurrency(value) } }, y: { grid: { display: false } } },
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => formatCurrency(context.parsed.x) } } }
+                }
+            });
+        }
+
+        // Apply Filters Helper
+        function applyFilters() {
+            renderDashboard();
+        }
+
+        // Category Chart (Chart.js)
+        function updateChart(monthTransactions) {
+            const categoryTotals = {};
+            monthTransactions.filter(t => t.type === 'OUT').forEach(t => {
+                categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+            });
+
+            const labels = Object.keys(categoryTotals);
+            const data = Object.values(categoryTotals);
+
+            const ctx = document.getElementById('categoryChart').getContext('2d');
+
+            if (window.categoryChartInstance) {
+                window.categoryChartInstance.destroy();
+            }
+
+            if (labels.length === 0) {
+                return;
+            }
+
+            window.categoryChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6', '#64748b'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 11, family: 'Inter' },
+                                boxWidth: 12
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        // Save Fund Limit & Complementary Configuration
+        async function saveFundLimit(e) {
+            e.preventDefault();
+            const valLimit = parseFloat(document.getElementById('fundLimitInput').value);
+            const valComp = parseFloat(document.getElementById('fundComplementInput').value) || 0;
+
+            if (!isNaN(valLimit) && valLimit >= 0) {
+                const saved = await saveShared(() => sharedRequest({ action: 'settings', fundLimit: valLimit, fundComplement: valComp }));
+                if (!saved) return;
+                showToast('Limites de teto salvos com sucesso!');
+            }
+        }
+
+        // Toggle Category Input dynamically for Income / Outcome
+        function toggleCategorySelect() {
+            const type = document.querySelector('input[name="type"]:checked').value;
+            const categorySelect = document.getElementById('formCategory');
+            document.getElementById('reimbursementFields').classList.toggle('hidden', type !== 'OUT');
+            document.getElementById('formReimbursement').disabled = type !== 'OUT';
+            if (!document.getElementById('formReimbursement').options.length) document.getElementById('formReimbursement').innerHTML = reimbursementOptions('UNREVIEWED');
+            if (type === 'IN') {
+                categorySelect.value = 'Aporte/Reembolso';
+                categorySelect.disabled = true;
+            } else {
+                categorySelect.disabled = false;
+                if (categorySelect.value === 'Aporte/Reembolso') {
+                    categorySelect.value = 'Alimentação';
+                }
+            }
+        }
+
+        // Handle File Selection (Base64 encoding)
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('O arquivo excede o tamanho máximo permitido de 5MB.', true);
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const isPdf = file.type === 'application/pdf';
+                window.currentBase64Receipt = {
+                    name: file.name,
+                    type: isPdf ? 'pdf' : 'image',
+                    data: e.target.result
+                };
+
+                document.getElementById('uploadPlaceholder').classList.add('hidden');
+                document.getElementById('uploadPreview').classList.remove('hidden');
+                document.getElementById('uploadFileName').textContent = file.name;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeSelectedFile() {
+            window.currentBase64Receipt = null;
+            document.getElementById('formReceiptFile').value = '';
+            document.getElementById('uploadPlaceholder').classList.remove('hidden');
+            document.getElementById('uploadPreview').classList.add('hidden');
+        }
+
+        // Submit Form (Add / Edit)
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editId').value;
+            const type = document.querySelector('input[name="type"]:checked').value;
+            const date = document.getElementById('formDate').value;
+            const amount = parseFloat(document.getElementById('formAmount').value);
+            const description = document.getElementById('formDescription').value.trim();
+            const category = type === 'IN' ? 'Aporte/Reembolso' : document.getElementById('formCategory').value;
+            const requester = document.getElementById('formRequester').value.trim();
+
+            let targetReceipt = window.currentBase64Receipt;
+            if (editId) {
+                const existing = (window.transactions || []).find(t => t.id === editId);
+                if (existing && !targetReceipt) {
+                    targetReceipt = existing.receipt || null;
+                }
+            }
+
+            const payload = {
+                id: editId || crypto.randomUUID(),
+                date,
+                type,
+                amount,
+                description,
+                category,
+                requester,
+                reimbursementStatus: type === 'OUT' ? document.getElementById('formReimbursement').value : 'NOT_APPLICABLE',
+                receipt: targetReceipt || null
+            };
+
+            const saved = await saveShared(async () => {
+                const transaction = await prepareTransaction(payload);
+                await sharedRequest({ id: transaction.id, transaction });
+            });
+            if (!saved) return;
+
+            closeModal('transactionModal');
+            resetForm();
+            renderDashboard();
+            showToast('Movimentação salva com sucesso!');
+        }
+
+        // Edit Modal Setup
+        function editTransaction(id) {
+            const item = (window.transactions || []).find(t => t.id === id);
+            if (!item) return;
+
+            document.getElementById('editId').value = item.id;
+            document.getElementById('modalTitle').innerHTML = `<i data-lucide="edit" class="w-5 h-5 mr-2 text-indigo-600"></i> Editar Movimentação`;
+            
+            // Set radio
+            const radios = document.getElementsByName('type');
+            radios.forEach(r => r.checked = (r.value === item.type));
+
+            document.getElementById('formDate').value = item.date;
+            document.getElementById('formAmount').value = item.amount;
+            document.getElementById('formDescription').value = item.description;
+            document.getElementById('formCategory').value = item.category;
+            document.getElementById('formRequester').value = item.requester;
+
+            toggleCategorySelect();
+            document.getElementById('formReimbursement').value = reimbursementStatus(item);
+
+            if (item.receipt) {
+                window.currentBase64Receipt = item.receipt;
+                document.getElementById('uploadPlaceholder').classList.add('hidden');
+                document.getElementById('uploadPreview').classList.remove('hidden');
+                document.getElementById('uploadFileName').textContent = item.receipt.name;
+            } else {
+                removeSelectedFile();
+            }
+
+            openModal('transactionModal');
+            lucide.createIcons();
+        }
+
+        // Delete Transaction
+        async function deleteTransaction(id) {
+            const saved = await saveShared(() => sharedRequest({ id }, 'DELETE'));
+            if (saved) showToast('Movimentação removida para todos!');
+        }
+
+        // View Attached Receipt
+        function viewReceipt(id) {
+            const item = (window.transactions || []).find(t => t.id === id);
+            if (!item || !item.receipt) return;
+
+            const container = document.getElementById('receiptViewerContent');
+            const downloadBtn = document.getElementById('receiptDownloadBtn');
+
+            downloadBtn.href = item.receipt.data;
+            downloadBtn.download = item.receipt.name;
+
+            if (item.receipt.type === 'pdf') {
+                container.innerHTML = `<embed src="${item.receipt.data}" type="application/pdf" class="w-full h-[500px] rounded-lg">`;
+            } else {
+                container.innerHTML = `<img src="${item.receipt.data}" alt="Comprovante" class="max-h-[500px] w-auto object-contain rounded-lg shadow-md">`;
+            }
+
+            document.getElementById('receiptViewerTitle').innerHTML = `<i data-lucide="file-text" class="w-5 h-5 mr-2 text-indigo-600"></i> Comprovante: ${escapeHTML(item.description)}`;
+            openModal('receiptViewerModal');
+            lucide.createIcons();
+        }
+
+        // Modal Helpers
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+            if (id === 'transactionModal') resetForm();
+        }
+
+        // Open Report Closing Options Modal
+        function openCloseReportModal() {
+            document.getElementById('closingDateInput').valueAsDate = new Date();
+            openModal('printReportModal');
+            lucide.createIcons();
+        }
+
+        // Generate Printable Document & Trigger Browser Print Dialog
+        function generateAndPrintReport() {
+            if (!window.sharedReady || window.saving) {
+                showToast('Aguarde o carregamento e o salvamento dos dados antes de imprimir.', true);
+                return;
+            }
+            const closingDate = document.getElementById('closingDateInput').value;
+            const closingResponsible = document.getElementById('closingResponsibleInput').value.trim() || 'Responsável pelo Fundo Fixo';
+            const selectedMonth = document.getElementById('monthFilter').value; // YYYY-MM
+
+            // Filter transactions for report
+            const monthTransactions = (window.transactions || []).filter(t => !selectedMonth || (t.date && t.date.startsWith(selectedMonth)));
+            
+            const reimbursements = reimbursementTotals(monthTransactions);
+            let totalIn = 0;
+            let totalOut = 0;
+            monthTransactions.forEach(t => {
+                if (t.type === 'IN') totalIn += (t.amount || 0);
+                else totalOut += (t.amount || 0);
+            });
+            const totalCeiling = (window.fundLimit || 0) + (window.fundComplement || 0);
+            const finalBalance = totalCeiling - totalOut;
+
+            const printContainer = document.getElementById('printableReport');
+            printContainer.innerHTML = `
+                <div style="font-family: Arial, sans-serif; color: #1e293b; padding: 20px; line-height: 1.4;">
+                    <!-- Header -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 20px;">
+                        <div>
+                            <h1 style="font-size: 22px; margin: 0; color: #312e81; font-weight: bold;">RELATÓRIO DE PRESTAÇÃO DE CONTAS - FUNDO FIXO (ACB)</h1>
+                            <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Mês de Referência: <strong>${selectedMonth || 'Todos'}</strong> | Data do Fechamento: <strong>${formatDate(closingDate)}</strong></p>
+                        </div>
+                        <div style="text-align: right; font-size: 12px; color: #64748b;">
+                            <p style="margin: 0;">Emissão: ${formatDate(new Date().toISOString().slice(0, 10))}</p>
+                        </div>
+                    </div>
+
+                    <!-- Financial Summary Cards -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <div style="flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; background: #f8fafc;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold;">Teto de Fundo (Regular + Complementar)</span>
+                            <div style="font-size: 16px; font-weight: bold; color: #1e293b; margin-top: 2px;">${formatCurrency(totalCeiling)}</div>
+                        </div>
+                        <div style="flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; background: #f8fafc;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold;">Total de Entradas / Aportes</span>
+                            <div style="font-size: 16px; font-weight: bold; color: #16a34a; margin-top: 2px;">${formatCurrency(totalIn)}</div>
+                        </div>
+                        <div style="flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; background: #f8fafc;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold;">Total de Despesas Realizadas</span>
+                            <div style="font-size: 16px; font-weight: bold; color: #dc2626; margin-top: 2px;">${formatCurrency(totalOut)}</div>
+                        </div>
+                        <div style="flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; background: #f8fafc;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold;">Saldo Disponível (Teto − Despesas)</span>
+                            <div style="font-size: 16px; font-weight: bold; color: #4f46e5; margin-top: 2px;">${formatCurrency(finalBalance)}</div>
+                        </div>
+                    </div>
+
+                    <!-- Reimbursements Summary -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <div style="flex: 1; border: 1px solid #a7f3d0; padding: 8px 10px; border-radius: 6px; background: #ecfdf5;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #065f46; font-weight: bold;">Reembolsado aos Funcionários</span>
+                            <div style="font-size: 14px; font-weight: bold; color: #059669; margin-top: 2px;">${formatCurrency(reimbursements.paid)}</div>
+                        </div>
+                        <div style="flex: 1; border: 1px solid #fde68a; padding: 8px 10px; border-radius: 6px; background: #fffbeb;">
+                            <span style="font-size: 10px; text-transform: uppercase; color: #92400e; font-weight: bold;">Pendente de Reembolso aos Funcionários</span>
+                            <div style="font-size: 14px; font-weight: bold; color: #d97706; margin-top: 2px;">${formatCurrency(reimbursements.pending)}</div>
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <h3 style="font-size: 14px; margin-bottom: 8px; font-weight: bold; color: #334155;">Detalhamento das Movimentações</h3>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; margin-bottom: 30px;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; width: 11%;">Data</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; width: 25%;">Descrição / Estabelecimento</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; width: 15%;">Categoria</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; width: 14%;">Solicitante</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: center; width: 10%;">Comprovante</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; width: 13%;">Reembolso</th>
+                                <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; width: 12%;">Valor (R$)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${monthTransactions.length === 0 ? `
+                                <tr>
+                                    <td colspan="7" style="padding: 16px; border: 1px solid #e2e8f0; text-align: center; color: #64748b;">Nenhuma movimentação registrada neste período.</td>
+                                </tr>
+                            ` : monthTransactions.sort((a,b) => new Date(a.date) - new Date(b.date)).map(t => `
+                                <tr style="border-bottom: 1px solid #e2e8f0;">
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${formatDate(t.date)}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHTML(t.description || '')}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHTML(t.category || '')}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${escapeHTML(t.requester || '')}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0; text-align: center;">${t.receipt ? 'Anexado' : (t.type === 'OUT' ? 'Pendente' : 'N/A')}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${reimbursementLabel(t)}</td>
+                                    <td style="padding: 6px 8px; border: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: ${t.type === 'OUT' ? '#dc2626' : '#16a34a'};">
+                                        ${t.type === 'OUT' ? '-' : '+'} ${formatCurrency(t.amount || 0)}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+
+                    <!-- Signatures Footer -->
+                    <div style="margin-top: 50px; display: flex; justify-content: space-around; text-align: center; font-size: 11px;">
+                        <div style="width: 220px; border-top: 1px solid #475569; padding-top: 6px;">
+                            <strong>${escapeHTML(closingResponsible)}</strong><br>
+                            <span>Responsável pelo Fundo Fixo</span>
+                        </div>
+                        <div style="width: 220px; border-top: 1px solid #475569; padding-top: 6px;">
+                            <strong>Aprovação Financeira</strong><br>
+                            <span>Departamento de Controladoria</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            closeModal('printReportModal');
+
+            // Keep printing in the click event; print CSS reveals the report only on paper.
+            try {
+                window.print();
+            } catch {
+                showToast('Não foi possível abrir a impressão. Use Ctrl+P ou a opção Imprimir do navegador.', true);
+            }
+        }
+
+        function resetForm() {
+            document.getElementById('transactionForm').reset();
+            document.getElementById('editId').value = '';
+            document.getElementById('modalTitle').innerHTML = `<i data-lucide="plus-circle" class="w-5 h-5 mr-2 text-indigo-600"></i> Nova Movimentação`;
+            document.getElementById('formDate').valueAsDate = new Date();
+            removeSelectedFile();
+            toggleCategorySelect();
+            document.getElementById('formReimbursement').value = 'UNREVIEWED';
+        }
+
+        // CSV Export
+        function exportDataCSV() {
+            const txs = window.transactions || [];
+            if (txs.length === 0) return;
+
+            let csvContent = "data:text/csv;charset=utf-8,ID,Data,Tipo,Descricao,Categoria,Solicitante,Valor,TemAnexo,ReembolsoFuncionario\n";
+            txs.forEach(t => {
+                const row = [
+                    t.id,
+                    t.date,
+                    t.type === 'IN' ? 'Entrada' : 'Saida',
+                    `"${(t.description || '').replace(/"/g, '""')}"`,
+                    `"${t.category || ''}"`,
+                    `"${(t.requester || '').replace(/"/g, '""')}"`,
+                    (t.amount || 0).toFixed(2),
+                    t.receipt ? 'Sim' : 'Nao',
+                    reimbursementLabel(t)
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `fundo_fixo_prestacao_contas_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Arquivo CSV gerado com sucesso!');
+        }
+
+        // Formatting Helpers
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const [year, month, day] = dateString.split('-');
+            return `${day}/${month}/${year}`;
+        }
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+    </script>
+</body>
+</html>
